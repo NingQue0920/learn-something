@@ -13,6 +13,8 @@ type RedisGenerator struct {
 	once   sync.Once
 }
 
+var redisGen *RedisGenerator
+
 func NewRedisGenerator(host, port string) *RedisGenerator {
 
 	return &RedisGenerator{

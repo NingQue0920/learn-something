@@ -5,14 +5,23 @@ import (
 	"sync"
 )
 
-type murmurHashGenerator struct {
+type MurmurHashGenerator struct {
 	setMu       sync.RWMutex
 	storeMu     sync.Mutex
 	urlMapCache map[string]string
 	urlSet      map[string]struct{}
 }
 
-func (mmh *murmurHashGenerator) Generate(input string) string {
+var murmurGen *MurmurHashGenerator
+
+func NewMurmurGenerator() *MurmurHashGenerator {
+	return &MurmurHashGenerator{
+		urlMapCache: make(map[string]string),
+		urlSet:      make(map[string]struct{}),
+	}
+
+}
+func (mmh *MurmurHashGenerator) Generate(input string) string {
 	// load from cache
 	mmh.setMu.RLock()
 	shorten, ok := mmh.urlMapCache[input]
@@ -31,7 +40,7 @@ func (mmh *murmurHashGenerator) Generate(input string) string {
 	return shortCode
 }
 
-func (mmh *murmurHashGenerator) Store(input, shorten string) {
+func (mmh *MurmurHashGenerator) Store(input, shorten string) {
 	// 缓存短链，避免重复生成
 	// todo：添加过期时间，LRU策略
 	mmh.setMu.Lock()
@@ -44,7 +53,7 @@ func (mmh *murmurHashGenerator) Store(input, shorten string) {
 	mmh.storeMu.Unlock()
 }
 
-func (mmh *murmurHashGenerator) handleCollisions(input, shortCode string) string {
+func (mmh *MurmurHashGenerator) handleCollisions(input, shortCode string) string {
 	for i := 0; i < maxRetries; i++ {
 
 		mmh.setMu.RLock()

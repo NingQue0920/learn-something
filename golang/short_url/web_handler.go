@@ -28,8 +28,16 @@ func ShortUrlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	shorten := commonPrefix + GenerateByMurmurHash(input.Url)
+	var shortCode string
+	switch config.GenType {
+	case "redis":
+		shortCode = redisGen.Generate(input.Url)
+	case "murmurhash":
+		shortCode = GenerateByMurmurHash(input.Url)
+	default:
+		http.Error(w, "Invalid generator type", http.StatusBadRequest)
+	}
+	shorten := commonPrefix + shortCode
 
 	response := struct {
 		ShortUrl string `json:"short_url"`
