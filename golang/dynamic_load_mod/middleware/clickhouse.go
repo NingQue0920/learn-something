@@ -5,11 +5,18 @@ package middleware
 
 import (
 	"database/sql"
-	"github.com/ClickHouse/clickhouse-go"
 )
 
 type ClickHouse struct {
 	conn *sql.DB
+}
+
+func init() {
+	RegisterMiddleware("clickhouse", NewClickHouse)
+}
+
+func NewClickHouse() (Middleware, error) {
+	return &ClickHouse{}, nil
 }
 
 func (c *ClickHouse) Initialize() error {
@@ -19,7 +26,7 @@ func (c *ClickHouse) Initialize() error {
 	_, err = clickhouse.Open("tcp://localhost:9000?debug=true")
 	return err
 }
-func (c *ClickHouse) Select(query string) (any, error) {
+func (c *ClickHouse) Read(query string) (any, error) {
 	return c.conn.Query(query)
 
 }

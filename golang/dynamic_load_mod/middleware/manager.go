@@ -9,16 +9,12 @@ type Manager struct {
 }
 
 // Common interfaces for all middleware types
-type Setter interface {
-	Set(key, value string) error
+type Reader interface {
+	Read(key string) (any, error)
 }
 
-type Producer interface {
-	Produce(topic, message string) error
-}
-
-type Selector interface {
-	Select(key string) (any, error)
+type Writer interface {
+	Write(topic, message string) error
 }
 
 func (m *Manager) InitMiddleware(name string) error {
@@ -48,28 +44,19 @@ func NewManager() *Manager {
 }
 
 // Type assertion helpers
-func (m *Manager) GetSetter(name string) (Setter, bool) {
+func (m *Manager) GetReader(name string) (Reader, bool) {
 	if mw, ok := m.GetMiddleware(name); ok {
-		if setter, ok := mw.(Setter); ok {
+		if setter, ok := mw.(Reader); ok {
 			return setter, true
 		}
 	}
 	return nil, false
 }
 
-func (m *Manager) GetProducer(name string) (Producer, bool) {
+func (m *Manager) GetWriter(name string) (Writer, bool) {
 	if mw, ok := m.GetMiddleware(name); ok {
-		if producer, ok := mw.(Producer); ok {
+		if producer, ok := mw.(Writer); ok {
 			return producer, true
-		}
-	}
-	return nil, false
-}
-
-func (m *Manager) GetSelector(name string) (Selector, bool) {
-	if mw, ok := m.GetMiddleware(name); ok {
-		if selector, ok := mw.(Selector); ok {
-			return selector, true
 		}
 	}
 	return nil, false

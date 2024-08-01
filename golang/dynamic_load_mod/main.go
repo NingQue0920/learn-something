@@ -30,24 +30,32 @@ func main() {
 	}
 
 	// 使用中间件
-	if setter, ok := manager.GetSetter("redis"); ok {
-		if err := setter.Set("key", "value"); err != nil {
+	if setter, ok := manager.GetWriter("redis"); ok {
+		if err := setter.Write("key", "value"); err != nil {
 			log.Printf("Failed to set key in Redis: %v", err)
 		}
 	} else {
-		fmt.Println("Redis setter is not available")
+		fmt.Println("Redis writer is not available")
 	}
 
-	if producer, ok := manager.GetProducer("kafka"); ok {
-		if err := producer.Produce("topic", "message"); err != nil {
+	if reader, ok := manager.GetReader("redis"); ok {
+		if _, err := reader.Read("key"); err != nil {
+			log.Printf("Failed to get key in Redis: %v", err)
+		}
+	} else {
+		fmt.Println("Redis reader is not available")
+	}
+
+	if producer, ok := manager.GetWriter("kafka"); ok {
+		if err := producer.Write("topic", "message"); err != nil {
 			log.Printf("Failed to produce message to Kafka: %v", err)
 		}
 	} else {
 		fmt.Println("Kafka producer is not available")
 	}
 
-	if selector, ok := manager.GetSelector("clickhouse"); ok {
-		if value, err := selector.Select("key"); err != nil {
+	if selector, ok := manager.GetReader("clickhouse"); ok {
+		if value, err := selector.Read("key"); err != nil {
 			log.Printf("Failed to select from ClickHouse: %v", err)
 		} else {
 			fmt.Printf("Selected value: %s\n", value)

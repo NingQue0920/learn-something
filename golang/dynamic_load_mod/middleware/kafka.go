@@ -12,6 +12,14 @@ type Kafka struct {
 	conn   net.Conn
 }
 
+func init() {
+	RegisterMiddleware("kafka", NewKafka)
+}
+
+func NewKafka() (Middleware, error) {
+	return &Kafka{}, nil
+}
+
 func (k *Kafka) Initialize() error {
 	// init kafka
 	var err error
@@ -26,7 +34,7 @@ func (k *Kafka) Initialize() error {
 	k.conn = kafka.NewConnWith(nil, k.config)
 	return err
 }
-func (k *Kafka) Produce(topic, message string) error {
+func (k *Kafka) Write(topic, message string) error {
 	_, err := k.conn.Write([]byte(message))
 	if err != nil {
 		return err

@@ -11,6 +11,14 @@ type Redis struct {
 	client *redis.Client
 }
 
+func init() {
+	RegisterMiddleware("redis", NewRedis)
+}
+
+func NewRedis() (Middleware, error) {
+	return &Redis{}, nil
+}
+
 func (r *Redis) Initialize() error {
 	// init redis
 	r.client = redis.NewClient(&redis.Options{
@@ -19,9 +27,9 @@ func (r *Redis) Initialize() error {
 	return nil
 }
 
-func (r *Redis) Set(key, value string) error {
+func (r *Redis) Write(key, value string) error {
 	return r.client.Set(key, value, 0).Err()
 }
-func (r *Redis) Get(key string) string {
-	return r.client.Get(key).Val()
+func (r *Redis) Read(key string) (any, error) {
+	return r.client.Get(key).Val(), nil
 }
