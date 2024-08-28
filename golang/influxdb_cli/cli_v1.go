@@ -1,14 +1,17 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/chzyer/readline"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/olekukonko/tablewriter"
 )
@@ -18,6 +21,7 @@ type InfluxDBInteractiveClient struct {
 	username string
 	password string
 	org      string
+	history  []string
 }
 
 func NewInfluxDBInteractiveClient(url, username, password, org string) *InfluxDBInteractiveClient {
@@ -29,7 +33,78 @@ func NewInfluxDBInteractiveClient(url, username, password, org string) *InfluxDB
 	}
 }
 
+func (c *InfluxDBInteractiveClient) addToHistory(query string) {
+	if len(c.history) >= 20 {
+		c.history = c.history[1:]
+	}
+	c.history = append(c.history, query)
+}
+
+func (c *InfluxDBInteractiveClient) parseCustomQuery(customQuery string) string {
+	parts := strings.Split(customQuery, "|")
+	baseQuery := strings.TrimSpace(parts[0])
+
+	var conditions, orderBy, groupBy, limit string
+	var timeRange string
+
+	limit = " LIMIT 20"
+	for _, part := range parts[1:] {
+		part = strings.TrimSpace(part)
+		switch {
+		case strings.HasPrefix(part, "id ="):
+			conditions += fmt.Sprintf(" AND _item_id = %s", strings.TrimPrefix(part, "id ="))
+		case strings.HasPrefix(part, "ob "):
+			orderBy = fmt.Sprintf(" ORDER BY %s", strings.TrimPrefix(part, "ob "))
+		case strings.HasPrefix(part, "gb "):
+			groupBy = fmt.Sprintf(" GROUP BY %s", strings.TrimPrefix(part, "gb "))
+		case strings.HasPrefix(part, "limit "):
+			limit = fmt.Sprintf(" LIMIT %s", strings.TrimPrefix(part, "limit "))
+		case strings.HasPrefix(part, "time "):
+			timeRange = parseTimeRange(part)
+		default:
+			conditions += fmt.Sprintf(" AND %s", part)
+		}
+	}
+
+	query := fmt.Sprintf("%s WHERE 1=1%s%s%s%s%s", baseQuery, conditions, timeRange, groupBy, orderBy, limit)
+	return query
+}
+
+func parseTimeRange(timeStr string) string {
+	timeStr = strings.TrimPrefix(timeStr, "time ")
+
+	// 匹配 "5m", "1h" 等格式
+	if match, _ := regexp.MatchString(`^\d+[mhs]$`, timeStr); match {
+		return fmt.Sprintf(" AND time > now() - %s", timeStr)
+	}
+
+	// 匹配 "in [2020-08-28T09:35 , 2020-08-08T10:25]" 格式
+	inRangeRegex := regexp.MustCompile(`in \[(.+?)\s*,\s*(.+?)\]`)
+	if matches := inRangeRegex.FindStringSubmatch(timeStr); len(matches) == 3 {
+		startTime := parseTime(matches[1])
+		endTime := parseTime(matches[2])
+		return fmt.Sprintf(" AND time >= '%s' AND time <= '%s'", startTime, endTime)
+	}
+
+	// 如果都不匹配，返回空字符串
+	return ""
+}
+
+func parseTime(timeStr string) string {
+	// 尝试解析时间字符串
+	t, err := time.Parse("2006-01-02T15:04", timeStr)
+	if err != nil {
+		// 如果解析失败，返回原始字符串
+		return timeStr
+	}
+	t = t.Add(-8 * time.Hour)
+	// 返回格式化的时间字符串
+	return t.Format(time.RFC3339)
+}
+
 func (c *InfluxDBInteractiveClient) ExecuteQuery(query string) {
+	query = c.parseCustomQuery(query)
+	fmt.Println("real query : ", query)
 	url := fmt.Sprintf("%s/query?db=%s&q=%s", c.url, "fio", url.QueryEscape(query))
 
 	req, _ := http.NewRequest("GET", url, nil)
@@ -53,7 +128,8 @@ func (c *InfluxDBInteractiveClient) ExecuteQuery(query string) {
 	var result map[string]interface{}
 	json.Unmarshal(body, &result)
 
-	table := tablewriter.NewWriter(os.Stdout)
+	var buf bytes.Buffer
+	table := tablewriter.NewWriter(&buf)
 	var headers []string
 	var data [][]string
 
@@ -98,29 +174,49 @@ func (c *InfluxDBInteractiveClient) ExecuteQuery(query string) {
 
 	table.AppendBulk(data)
 	table.Render()
+	fmt.Println(buf.String())
 }
 
 func (c *InfluxDBInteractiveClient) InteractiveMode() {
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "InfluxDB > ",
+		HistoryFile:     "/tmp/influxdb_history",
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer rl.Close()
+
 	fmt.Println("欢迎使用InfluxDB交互式客户端。输入'exit'退出。")
-	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Println("使用上下箭头键浏览历史记录。")
+
 	for {
-		fmt.Print("请输入SQL查询 > ")
-		if !scanner.Scan() {
+		line, err := rl.Readline()
+		if err != nil { // io.EOF, readline.ErrInterrupt
 			break
 		}
-		query := scanner.Text()
-		if len(query) < 10 {
+		line = strings.TrimSpace(line)
+		if line == "exit" {
+			break
+		}
+		if line == "" {
 			continue
 		}
-		if strings.ToLower(query) == "exit" {
-			break
-		}
-		c.ExecuteQuery(query)
+		c.ExecuteQuery(line)
+		c.addToHistory(line)
+		rl.SaveHistory(line)
 	}
 }
 
 func main() {
-	url := "http://10.20.28.235:9086"
+	var url string
+	if len(os.Args) < 2 {
+		url = "http://127.0.0.1:9086"
+	} else {
+		url = fmt.Sprintf("http://%s:9086", os.Args[1])
+	}
 	username := "fio"
 	password := "Fio#1234"
 	org := "fio"
