@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -212,11 +211,10 @@ func (c *InfluxDBInteractiveClient) InteractiveMode() {
 
 func main() {
 	var url string
-	if len(os.Args) < 2 {
-		url = "http://127.0.0.1:9086"
-	} else {
-		url = fmt.Sprintf("http://%s:9086", os.Args[1])
-	}
+	// 让用户输出ip地址
+	fmt.Print("请输入InfluxDB地址: ")
+	fmt.Scanln(&url)
+	url = "http://" + url + ":9086"
 	username := "fio"
 	password := "Fio#1234"
 	org := "fio"
