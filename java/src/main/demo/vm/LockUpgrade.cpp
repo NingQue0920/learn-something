@@ -7,8 +7,10 @@
 
 void ObjectSynchronizer::fast_enter(Handle obj, BasicLock* lock,
                                     bool attempt_rebias, TRAPS) {
+//  启用偏向锁
   if (UseBiasedLocking) {
     if (!SafepointSynchronize::is_at_safepoint()) {
+    // 不在安全点，撤销偏向锁
       BiasedLocking::Condition cond = BiasedLocking::revoke_and_rebias(obj, attempt_rebias, THREAD);
       if (cond == BiasedLocking::BIAS_REVOKED_AND_REBIASED) {
         return;
@@ -19,7 +21,7 @@ void ObjectSynchronizer::fast_enter(Handle obj, BasicLock* lock,
     }
     assert(!obj->mark()->has_bias_pattern(), "biases should be revoked by now");
   }
-
+// 冲突 or 未启用偏向锁，进入轻量级锁阶段。
   slow_enter(obj, lock, THREAD);
 }
 
@@ -38,6 +40,7 @@ void ObjectSynchronizer::slow_enter(Handle obj, BasicLock* lock, TRAPS) {
     // Anticipate successful CAS -- the ST of the displaced mark must
     // be visible <= the ST performed by the CAS.
     lock->set_displaced_header(mark);
+    // 比较熟悉的操作：通过CAS把mark word更新为指向lock的指针，更新成功：表示获取了轻量级锁，直接返回；更新失败：inflate进行锁膨胀，enter进入重量级锁。
     if (mark == obj()->cas_set_mark((markOop) lock, mark)) {
       TEVENT(slow_enter: release stacklock);
       return;
@@ -56,6 +59,7 @@ void ObjectSynchronizer::slow_enter(Handle obj, BasicLock* lock, TRAPS) {
   // must be non-zero to avoid looking like a re-entrant lock,
   // and must not look locked either.
   lock->set_displaced_header(markOopDesc::unused_mark());
+  // 锁膨胀 + 重量级锁
   ObjectSynchronizer::inflate(THREAD,
                               obj(),
                               inflate_cause_monitor_enter)->enter(THREAD);
@@ -301,6 +305,7 @@ void ObjectMonitor::enter(TRAPS) {
   // transitions.  The following spin is strictly optional ...
   // Note that if we acquire the monitor from an initial spin
   // we forgo posting JVMTI events and firing DTRACE probes.
+  // 适应性自旋，TrySpin函数。
   if (Knob_SpinEarly && TrySpin (Self) > 0) {
     assert(_owner == Self, "invariant");
     assert(_recursions == 0, "invariant");
