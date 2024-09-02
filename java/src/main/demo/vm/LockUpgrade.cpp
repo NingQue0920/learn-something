@@ -10,12 +10,12 @@ void ObjectSynchronizer::fast_enter(Handle obj, BasicLock* lock,
 //  启用偏向锁
   if (UseBiasedLocking) {
     if (!SafepointSynchronize::is_at_safepoint()) {
-    // 不在安全点，撤销偏向锁
+    // 不在安全点，尝试获取偏向锁
       BiasedLocking::Condition cond = BiasedLocking::revoke_and_rebias(obj, attempt_rebias, THREAD);
       if (cond == BiasedLocking::BIAS_REVOKED_AND_REBIASED) {
         return;
       }
-    } else {
+    } else { // 在安全点，直接撤销偏向锁
       assert(!attempt_rebias, "can not rebias toward VM thread");
       BiasedLocking::revoke_at_safepoint(obj);
     }
@@ -32,6 +32,7 @@ void ObjectSynchronizer::fast_enter(Handle obj, BasicLock* lock,
 // This routine is used to handle interpreter/compiler slow case
 // We don't need to use fast path here, because it must have been
 // failed in the interpreter/compiler code.
+// 轻量级锁
 void ObjectSynchronizer::slow_enter(Handle obj, BasicLock* lock, TRAPS) {
   markOop mark = obj->mark();
   assert(!mark->has_bias_pattern(), "should not see bias pattern here");
@@ -65,7 +66,7 @@ void ObjectSynchronizer::slow_enter(Handle obj, BasicLock* lock, TRAPS) {
                               inflate_cause_monitor_enter)->enter(THREAD);
 }
 
-
+// 锁膨胀的过程，主要是判断状态，然后修改一些指针的指向。可以不看
 ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
                                                      oop object,
                                                      const InflateCause cause) {
@@ -78,6 +79,7 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
   EventJavaMonitorInflate event;
 
   for (;;) {
+    // 获取对象的mark word
     const markOop mark = object->mark();
     assert(!mark->has_bias_pattern(), "invariant");
 
@@ -89,6 +91,7 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
     // *  BIASED       - Illegal.  We should never see this
 
     // CASE: inflated
+    // 如果mark word的monitor指针不为空，表示已经膨胀为重量级锁，直接返回monitor指针。
     if (mark->has_monitor()) {
       ObjectMonitor * inf = mark->monitor();
       assert(inf->header()->is_neutral(), "invariant");
@@ -103,6 +106,7 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
     // The INFLATING value is transient.
     // Currently, we spin/yield/park and poll the markword, waiting for inflation to finish.
     // We could always eliminate polling by parking the thread on some auxiliary list.
+    // 如果mark word的monitor指针为INFLATING，表示正在膨胀，等待膨胀完成。
     if (mark == markOopDesc::INFLATING()) {
       TEVENT(Inflate: spin while INFLATING);
       ReadStableMark(object);
@@ -127,7 +131,7 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
     // Using such local free lists, it doesn't matter if the omAlloc() call appears
     // before or after the CAS(INFLATING) operation.
     // See the comments in omAlloc().
-
+    // 轻量级锁。
     if (mark->has_locker()) {
       ObjectMonitor * m = omAlloc(Self);
       // Optimistically prepare the objectmonitor - anticipate successful CAS
@@ -221,7 +225,7 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
     // to inflate and then CAS() again to try to swing _owner from NULL to Self.
     // An inflateTry() method that we could call from fast_enter() and slow_enter()
     // would be useful.
-
+    // 无锁，直接膨胀为重量级锁。
     assert(mark->is_neutral(), "invariant");
     ObjectMonitor * m = omAlloc(Self);
     // prepare m for installation - set monitor to initial state
@@ -267,12 +271,12 @@ ObjectMonitor* ObjectSynchronizer::inflate(Thread * Self,
 
 // -----------------------------------------------------------------------------
 // Enter support
-
+// 重量级锁
 void ObjectMonitor::enter(TRAPS) {
   // The following code is ordered to check the most common cases first
   // and to reduce RTS->RTO cache line upgrades on SPARC and IA32 processors.
   Thread * const Self = THREAD;
-
+  // 比较并交换，将_owner设置为Self，预期值为NULL，表示没有线程拥有该锁，即当前线程为第一个获取锁的线程。
   void * cur = Atomic::cmpxchg(Self, &_owner, (void*)NULL);
   if (cur == NULL) {
     // Either ASSERT _recursions == 0 or explicitly set _recursions = 0.
@@ -280,7 +284,7 @@ void ObjectMonitor::enter(TRAPS) {
     assert(_owner == Self, "invariant");
     return;
   }
-
+  // 当前线程已经拥有该锁（cmpxchg成功，返回值为Self），则增加重入计数。
   if (cur == Self) {
     // TODO-FIXME: check for integer overflow!  BUGID 6557169.
     _recursions++;
@@ -305,6 +309,7 @@ void ObjectMonitor::enter(TRAPS) {
   // transitions.  The following spin is strictly optional ...
   // Note that if we acquire the monitor from an initial spin
   // we forgo posting JVMTI events and firing DTRACE probes.
+
   // 适应性自旋，TrySpin函数。
   if (Knob_SpinEarly && TrySpin (Self) > 0) {
     assert(_owner == Self, "invariant");
