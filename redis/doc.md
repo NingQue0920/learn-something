@@ -2,3 +2,4 @@
    - 数据量小，Hash使用ziplist/listpack进行编码，压缩内存，同时保证线性查询的时间复杂度。
    - 数据量大，Hash使用hashtable进行编码，保证了K-V映射关系，查询时间复杂度为O(1)
 
+https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/
