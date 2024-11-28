@@ -1,0 +1,15 @@
+设计动机：
+    1. 高吞吐量。
+    2. 低时延。
+    3. 高可靠性。
+ 持久性（File System + Page Cache）：
+    1. 磁盘并不慢，顺序IO速度远大于随机IO速度，甚至高于随机内存的读写。所以使用PageCache。
+    2. Java对象的内存开销很高，可能会影响存储数据的大小；且JVM垃圾回收会随着数据增加而变慢。
+    3. BTree性能还行，但是对磁盘来说，还不够。
+ 效率：
+    1. 性能问题通常在与 Small IO 和 Byte Copy 。
+    2. Small IO 存在于客户端与服务器之间，同时也存在与Broker的持久化过程中，
+    3. 使用Message Set来把消息进行聚合，而不是一次发一条消息。
+    4. 使用sendfile减少Byte Copy的次数，即零拷贝。
+    （场景）：多个Consumer订阅同一个topic，不需要从内存中每次都拷贝到用户态一次，而是直接从pagecache读取到Socket Buffer。
+    5. 端到端的数据压缩。节约带宽。
