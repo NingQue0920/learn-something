@@ -1,0 +1,8 @@
+java/target/
+*.iml
+.idea/
+./golang/.idea/
+*.exe
+*.bin
+*.sum
+.gitignore
